@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@layer utilities {
+    .brand-btn {
+        @apply border border-[#00684A] rounded hover:rounded-full cursor-pointer bg-[#00ED64] text-[#001e2b] font-medium; 
+    }
+
+    .brand-btn2 {
+        @apply border border-blue-900 rounded hover:rounded-full cursor-pointer bg-blue-500 text-white font-medium; 
+    }
+
+    .cred-btn {
+        @apply border border-gray-600 rounded hover:rounded-full cursor-pointer bg-gray-700 text-white font-medium; 
+    }
+
+    .user-input {
+        @apply border rounded-md border-gray-300 p-4 bg-gray-50 focus:outline-1 focus:outline-blue-500;
+    }
+}

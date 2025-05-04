@@ -1,0 +1,32 @@
+{
+    "name": "tasky",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "dev": "nodemon -r dotenv/config app.js dotenv_config_path=env/dev.env",
+        "start": "pm2 start app.js --name tasky --node-args='-r dotenv/config'",
+        "restart": "pm2 restart tasky"
+    },
+    "type": "module",
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "axios": "^1.7.9",
+        "bcrypt": "^5.1.1",
+        "date-fns": "^4.1.0",
+        "date-fns-tz": "^3.2.0",
+        "dotenv": "^16.4.7",
+        "express": "^4.21.2",
+        "express-validator": "^7.2.0",
+        "jsonwebtoken": "^9.0.2",
+        "mongoose": "^8.8.4",
+        "node-schedule": "^2.1.1",
+        "pg": "^8.14.1",
+        "razorpay": "^2.9.6"
+    },
+    "devDependencies": {
+        "chance": "^1.1.12"
+    }
+}
