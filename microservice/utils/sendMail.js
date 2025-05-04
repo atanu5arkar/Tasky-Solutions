@@ -1,9 +1,6 @@
 import nodemailer from "nodemailer";
 
-// const { BREVO_USER, BREVO_PASS } = process.env;
-const
-    BREVO_USER = "7b8f68001@smtp-brevo.com",
-    BREVO_PASS = "HKM8k0wmVqtGxspb";
+const { BREVO_USER, BREVO_PASS } = process.env;
 
 const transporter = nodemailer.createTransport({
     host: "smtp-relay.brevo.com",
