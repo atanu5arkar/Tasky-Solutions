@@ -51,12 +51,12 @@ async function sendVerificationLinks(name, email, phone, type) {
             body: emailBody
         });
 
-//         return await sendSMS({
-//             phone,
-//             body: `
-//             Hey! Tap the link below to verify the phone no. for your Tasky Account: 
-// ${MAIN_SERVER}/${uniqueKey}/verify-links?email=${email}&${phoneParam}&token=${token}`
-//         });
+        return await sendSMS({
+            phone,
+            body: `
+            Hey! Tap the link below to verify the phone no. for your Tasky Account: 
+${MAIN_SERVER}/${uniqueKey}/verify-links?email=${email}&${phoneParam}&token=${token}`
+        });
     } catch (error) {
         console.log(error);
     }
@@ -70,10 +70,10 @@ async function sendOTP(email, phone, type) {
         await redisClient.set(`${email}${type ?? 'user'}`, otp, { EX: 60 * 10 });
         console.log(otp);
 
-        // return await sendSMS({
-        //     phone,
-        //     body: `Your Tasky Login OTP is ${otp}. Valid for 10 mins only.`
-        // });
+        return await sendSMS({
+            phone,
+            body: `Your Tasky Login OTP is ${otp}. Valid for 10 mins only.`
+        });
     } catch (error) {
         console.log(error);
     }

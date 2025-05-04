@@ -1,7 +1,8 @@
 import { parse } from "date-fns";
 import { fromZonedTime } from "date-fns-tz";
 
-import { pool } from "../../utils/connectPostgres.js";
+import TaskModel from "../../models/Individual/Task.js";
+import UserModel from "../../models/Individual/User.js";
 import { getReminders } from "../../utils/helpers.js";
 import { cancelReminders, scheduleReminders } from "../../utils/userScheduler.js";
 
@@ -12,12 +13,28 @@ import { cancelReminders, scheduleReminders } from "../../utils/userScheduler.js
 async function getAllTasksController(req, res) {
     try {
         const { userId } = req.user;
-        const { rows } = await pool.query(`
-            SELECT _id, task, deadline, status, alert_type 
-            FROM tasks WHERE user_id = $1;
-        `, [userId]);
+        let tasks = await TaskModel.find({ user: userId }, '-user');
+        tasks = tasks.map(task => task.toObject());
+        return res.status(200).json(tasks);
 
-        return res.status(200).json(rows);
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ msg: 'Server Error!' });
+    }
+}
+
+/* 
+    @route: /api/tasks/:taskid
+    @method: GET
+*/
+async function getTaskController(req, res) {
+    try {
+        const { userId } = req.user;
+        const { taskid } = req.params;
+
+        const task = await TaskModel.findOne({ _id: taskid, user: userId });
+        return res.status(200).json(task);
+
     } catch (error) {
         console.log(error);
         return res.status(500).json({ msg: 'Server Error!' });
@@ -38,20 +55,24 @@ async function addTaskController(req, res) {
 
         deadline = parse(deadline, "yyyy-MM-dd'T'HH:mm", new Date());
         deadline = fromZonedTime(deadline, "Asia/Kolkata");
-
+        
         const reminders = getReminders(deadline);
-
-        const { rows } = await pool.query(`
-            INSERT INTO tasks (user_id, task, deadline, reminders, alert_type)    
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING *;
-        `, [userId, task, deadline, reminders, alertType]);
+        
+        const taskDoc = new TaskModel({
+            task,
+            user: userId,
+            deadline,
+            reminders,
+            alertType
+        });
+        await taskDoc.save();
+        await UserModel.updateOne({ _id: userId }, { $push: { tasks: taskDoc._id } });
 
         scheduleReminders({
             _id: userId,
             task,
             deadline,
-            taskId: rows[0]._id,
+            taskId: taskDoc._id,
             dateArr: reminders,
             alertType,
             phone,
@@ -74,25 +95,23 @@ async function addTaskController(req, res) {
 */
 async function updateTaskController(req, res) {
     try {
-        let { task, deadline, alertType, status } = req.body;
+        let { task, deadline, alertType, status } = req.body;        
         const { taskid } = req.params;
         const { userId, phone, email } = req.user;
 
         deadline = parse(deadline, "yyyy-MM-dd'T'HH:mm", new Date());
         deadline = fromZonedTime(deadline, "Asia/Kolkata");
-
+        
         const reminders = getReminders(deadline);
         status = status == "pending" ? false : true;
 
-        const { rowCount } = await pool.query(`
-            UPDATE tasks  
-            SET task = $1, deadline = $2, reminders = $3, status = $4, alert_type = $5
-            WHERE _id = $6 AND user_id = $7;
-        `, [task, deadline, reminders, status, alertType, taskid, userId]);
-
+        await TaskModel.updateOne({ _id: taskid, user: userId }, {
+            $set: { task, deadline, alertType, reminders, status }
+        });
+        
         cancelReminders(taskid, email);
 
-        if (!status && rowCount) {
+        if (!status) {
             scheduleReminders({
                 _id: userId,
                 task,
@@ -118,34 +137,26 @@ async function statusUpdateController(req, res) {
         const { userId, email, phone } = req.user;
         const { taskid } = req.params;
 
-        const { rows } = await pool.query(`
-            UPDATE tasks
-            SET status = $1
-            WHERE _id = $2 AND user_id = $3
-            RETURNING *;
-        `, [status, taskid, userId]);
+        await TaskModel.updateOne({ _id: taskid, user: userId }, {
+            $set: { status }
+        });
 
-        if (!status && rows.length) {
-            const { deadline } = rows[0]; // GMT 0
+        if (!status) {
+            const taskDoc = await TaskModel.findOne({ _id: taskid, user: userId });
+            const { deadline } = taskDoc; // GMT 0
             const mins = (new Date(deadline) - new Date()) / (1000 * 60);
 
             if (mins >= 2) {
                 const reminders = getReminders(deadline);
-                
-                await pool.query(`
-                    UPDATE tasks
-                    SET reminders = $1
-                    WHERE _id = $2 AND user_id = $3
-                    RETURNING *;
-                `, [reminders, taskid, userId]);
+                await TaskModel.updateOne({ _id: taskid, user: userId }, { $set: { reminders } });
 
                 scheduleReminders({
                     _id: userId,
-                    task: rows[0].task,
+                    task: taskDoc.task,
                     deadline,
                     taskId: taskid,
                     dateArr: reminders,
-                    alertType: rows[0].alertType,
+                    alertType: taskDoc.alertType,
                     phone,
                     email
                 });
@@ -170,11 +181,8 @@ async function deleteTaskController(req, res) {
         const { taskid } = req.params;
         const { userId, email } = req.user;
 
-        await pool.query(`
-            DELETE FROM tasks
-            WHERE _id = $1 AND user_id = $2;    
-        `, [taskid, userId]);
-
+        await TaskModel.deleteOne({ _id: taskid, user: userId });
+        await UserModel.updateOne({ _id: userId }, { $pull: { tasks: taskid } });
         cancelReminders(taskid, email);
         return res.status(200).json({ msg: 'Task Deleted Successfully' });
 
@@ -186,6 +194,7 @@ async function deleteTaskController(req, res) {
 
 export {
     getAllTasksController,
+    getTaskController,
     addTaskController,
     deleteTaskController,
     updateTaskController,

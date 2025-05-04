@@ -18,8 +18,7 @@ function Dashboard() {
     const navigate = useNavigate();
 
     const userContext = useContext(UserContext);
-    const { tasks } = userContext;
-    const { alerts, email_credits, sms_credits } = userContext.profile ?? {};
+    const { alerts, tasks, credits } = userContext.profile ?? {};
 
     useEffect(() => {
         async function getProfileData() {
@@ -28,7 +27,6 @@ function Dashboard() {
                 if (!auth) return navigate("/login");
 
                 await userContext.fetchUserProfile(auth);
-                await userContext.fetchUserTasks(auth);
                 setLoading(false);
             } catch (error) {
                 console.log(error);
@@ -43,17 +41,18 @@ function Dashboard() {
 
         const timerId = setInterval(() => {
             setStats(stats => {
+                const { email, sms } = credits
                 const { bells, totTasks, mails, msgs } = stats;
 
-                if (bells == alerts && totTasks == tasks.length && mails == email_credits && msgs == sms_credits) {
+                if (bells == alerts && totTasks == tasks.length && mails == email && msgs == sms) {
                     clearInterval(timerId);
                     return stats;
                 }
                 return {
                     bells: bells == alerts ? alerts : bells + 1,
                     totTasks: totTasks == tasks.length ? tasks.length : totTasks + 1,
-                    mails: mails == email_credits ? email_credits : mails + 1,
-                    msgs: msgs == sms_credits ? sms_credits : msgs + 1,
+                    mails: mails == email ? email : mails + 1,
+                    msgs: msgs == sms ? sms : msgs + 1,
                 }
             });
         }, 8);

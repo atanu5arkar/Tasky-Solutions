@@ -6,6 +6,7 @@ import {
     addTaskController, 
     deleteTaskController, 
     getAllTasksController, 
+    getTaskController, 
     updateTaskController,
     statusUpdateController
 } from "../../controllers/Individual/taskControllers.js";
@@ -15,6 +16,8 @@ const taskRouter = express.Router();
 taskRouter.use(userAuthentication);
 
 taskRouter.get('/', getAllTasksController);
+taskRouter.get('/:taskid', getTaskController);
+
 taskRouter.post('/add', taskValidator(), validationMiddleware, addTaskController);
 taskRouter.put('/update/:taskid', taskValidator(), validationMiddleware, updateTaskController);
 taskRouter.put("/status/:taskid", statusUpdateController);

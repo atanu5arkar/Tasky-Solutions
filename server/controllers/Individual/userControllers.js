@@ -1,7 +1,7 @@
 import axios from "axios";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { pool } from "../../utils/connectPostgres.js";
+import { Types } from "mongoose";
 
 import UserModel from "../../models/Individual/User.js";
 import TaskModel from "../../models/Individual/Task.js";
@@ -24,20 +24,12 @@ async function signupController(req, res) {
         let { name, email, phone, password } = req.body;
 
         // Emails are kept unique
-        const dbRes = await pool.query(`
-            SELECT email FROM users
-            WHERE email = $1;    
-        `, [email]);
-
-        if (dbRes.rowCount)
+        const user = await UserModel.findOne({ email });
+        if (user)
             return res.status(409).json({ msg: 'User is already Registered!' });
 
         password = await bcrypt.hash(password, 10);
-
-        await pool.query(`
-            INSERT INTO users (name, email, phone, password)
-            VALUES ($1, $2, $3, $4);
-        `, [name, email, phone, password]);
+        await new UserModel({ name, email, phone, password }).save();
 
         await myAxios.post('/send-links', { name, email, phone });
         return res.status(201).json({ msg: 'User Registered Successfully' });
@@ -57,15 +49,12 @@ async function verificationController(req, res) {
         const { email, phone, token } = req.query;
 
         // Handle already verified
-        const { rows } = await pool.query(`
-            SELECT is_email_verified, is_phone_verified FROM users
-            WHERE email = $1;    
-        `, [email]);
+        const user = await UserModel.findOne({ email });
 
-        if (email && phone && rows[0]?.is_phone_verified)
+        if (email && phone && user?.isVerified.phone)
             return res.status(409).json({ msg: `Verified Already` });
 
-        if (email && !phone && rows[0]?.is_email_verified)
+        if (email && !phone && user?.isVerified.email)
             return res.status(409).json({ msg: `Verified Already` });
 
         // Otherwise hit the microservice
@@ -73,17 +62,9 @@ async function verificationController(req, res) {
         const { msg } = response.data;
 
         if (msg == 'Email')
-            await pool.query(`
-                UPDATE users
-                SET is_email_verified = true
-                WHERE email = $1;
-            `, [email]);
+            await UserModel.updateOne({ email }, { $set: { 'isVerified.email': true } });
         else
-            await pool.query(`
-                UPDATE users
-                SET is_phone_verified = true
-                WHERE email = $1;
-            `, [email]);
+            await UserModel.updateOne({ email }, { $set: { 'isVerified.phone': true } });
 
         return res.status(200).json({ msg: 'Verification Successful' });
 
@@ -104,30 +85,22 @@ async function verificationController(req, res) {
 async function loginController(req, res) {
     try {
         const { email, password } = req.body;
+        const user = await UserModel.findOne({ email });
 
-        const { rows } = await pool.query(`
-            SELECT * FROM users
-            WHERE email = $1;    
-        `, [email]);
-
-        if (!rows.length)
+        if (!user)
             return res.status(401).json({ msg: 'Invalid Credentials.' });
 
-        const {
-            _id: userId,
-            password: hash,
-            name,
-            phone,
-            is_email_verified,
-            is_phone_verified
-        } = rows[0];
-
-        const isPassValid = await bcrypt.compare(password, hash);
+        const isPassValid = await bcrypt.compare(password, user.password);
 
         if (!isPassValid)
             return res.status(401).json({ msg: 'Invalid Credentials!' });
 
-        if (!is_email_verified || !is_phone_verified)
+        if (!user.isActive)
+            return res.status(401).json({ msg: 'Your Account has been Suspended.' });
+
+        const { _id: userId, name, phone, isVerified } = user;
+
+        if (!isVerified.email || !isVerified.phone)
             return res.status(401).json({ msg: 'Please verify your Email and Phone.' });
 
         await myAxios.post('/send-otp', { email, phone });
@@ -175,13 +148,8 @@ async function twoFactorAuthController(req, res) {
 async function fetchUserProfile(req, res) {
     try {
         const { userId } = req.user;
-        const { rows } = await pool.query(`
-            SELECT name, email, phone, email_credits, sms_credits, alerts 
-            FROM users
-            WHERE _id = $1;    
-        `, [userId]);
-
-        return res.status(200).json(rows[0]);
+        const user = await UserModel.findById(userId, '-password -alertDates');
+        return res.status(200).json(user);
 
     } catch (error) {
         console.log(error);
@@ -192,23 +160,17 @@ async function fetchUserProfile(req, res) {
 async function updateUserProfile(req, res) {
     try {
         let { newPhone, newEmail } = req.body;
-        const { email } = req.user;
+        const { email, phone } = req.user;
 
-        let msg = {};
+        let user, msg = {};
 
         if (newEmail) {
-            const { rowCount } = await pool.query(`
-                SELECT email FROM users
-                WHERE email = $1;    
-            `, [newEmail]);
-            rowCount && (msg.newEmail = "This email is already taken.");
+            user = await UserModel.findOne({ email: newEmail });
+            user && (msg.newEmail = "This email is already taken.");
         }
         else {
-            const { rowCount } = await pool.query(`
-                SELECT email FROM users
-                WHERE email = $1 AND phone = $2;    
-            `, [email, newPhone]);
-            rowCount && (msg.newPhone = "The number is already in use.");
+            user = await UserModel.findOne({ email, phone: newPhone });
+            user && (msg.newPhone = "The number is already in use.");
         }
 
         if (Object.keys(msg).length)
@@ -234,54 +196,50 @@ async function verifyUpdateOTP(req, res) {
         // For a valid OTP, the alerts must be reset along with DB update
 
         if (msg == "Email") {
-            await pool.query(`
-                UPDATE users
-                SET email = $1 WHERE _id = $2;    
-            `, [newEmail, userId]);
-
-            const { rows } = await pool.query(`
-                SELECT * FROM tasks
-                WHERE 
-                user_id = $1 AND status = ${false} AND (alert_type = 'email' OR alert_type = 'both');
-            `, [userId]);
-
-            rows.forEach(row => {
-                const { task, deadline, reminders, alertType } = row;
-
-                cancelReminders(row._id, email);
+            await UserModel.updateOne({ _id: userId }, { $set: { email: newEmail } });
+            const tasks = await TaskModel.find({
+                user: userId,
+                status: false,
+                $or: [
+                    { alertType: "email" },
+                    { alertType: "both" }
+                ]
+            });
+            tasks.forEach(taskDoc => {
+                const { task, deadline, reminders, alertType } = taskDoc;
+                
+                cancelReminders(taskDoc._id, email);
                 scheduleReminders({
                     _id: userId,
                     task,
                     deadline,
-                    taskId: row._id,
+                    taskId: taskDoc._id,
                     dateArr: reminders,
                     alertType,
                     phone,
                     email: newEmail
                 });
             });
-        }
+        } 
         else {
-            await pool.query(`
-                UPDATE users
-                SET phone = $1 WHERE _id = $2;    
-            `, [newPhone, userId]);
-
-            const { rows } = await pool.query(`
-                SELECT * FROM tasks
-                WHERE 
-                user_id = $1 AND status = ${false} AND (alert_type = 'sms' OR alert_type = 'both');
-            `, [userId]);
-
-            rows.forEach(row => {
-                const { task, deadline, reminders, alertType } = row;
-
-                cancelReminders(row._id, email);
+            await UserModel.updateOne({ _id: userId }, { $set: { phone: newPhone } });
+            const tasks = await TaskModel.find({
+                user: userId,
+                status: false,
+                $or: [
+                    { alertType: "sms" },
+                    { alertType: "both" }
+                ]
+            });
+            tasks.forEach(taskDoc => {
+                const { task, deadline, reminders, alertType } = taskDoc;
+                
+                cancelReminders(taskDoc._id, email);
                 scheduleReminders({
                     _id: userId,
                     task,
                     deadline,
-                    taskId: row._id,
+                    taskId: taskDoc._id,
                     dateArr: reminders,
                     alertType,
                     phone: newPhone,
@@ -305,6 +263,102 @@ async function verifyUpdateOTP(req, res) {
     }
 }
 
+/* 
+    @route: /api/user/scheduled-tasks
+    @method: GET
+*/
+async function getScheduledTasksController(req, res) {
+    try {
+        const { userId } = req.user;
+        const result = await TaskModel.aggregate([
+            {
+                $match: {
+                    user: Types.ObjectId.createFromHexString(userId)
+                }
+            },
+            {
+                $count: 'scheduledTasks'
+            }
+        ]);
+        return res.status(200).json(result);
+
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ msg: 'Server Error!' });
+    }
+}
+
+/* 
+    @route: /api/user/alerts
+    @method: GET
+*/
+async function getAlertsController(req, res) {
+    try {
+        const { userId } = req.user;
+        const { alerts } = await UserModel.findOne({ _id: userId });
+        return res.status(200).json({ alerts });
+
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ msg: 'Server Error!' });
+    }
+}
+
+/* 
+    @route: /api/user/filter-alerts
+    @method: GET
+    @query: from, to (GMT date strings)
+*/
+async function filterAlertsController(req, res) {
+    try {
+        const { userId } = req.user;
+        const { from, to } = req.query;
+
+        const startDate = new Date(from);
+        const endDate = new Date(to);
+
+        const midnight = [0, 0, 0, 0];
+
+        startDate.setUTCHours(...midnight);
+
+        endDate.setUTCHours(...midnight);
+        endDate.setUTCDate(endDate.getUTCDate() + 1);
+
+        const result = await UserModel.aggregate([
+            {
+                $match: {
+                    _id: Types.ObjectId.createFromHexString(userId)
+                }
+            },
+            {
+                $project: {
+                    alertDates: {
+                        $filter: {
+                            input: '$alertDates',
+                            as: 'date',
+                            cond: {
+                                $and: [
+                                    {
+                                        $gte: ['$$date', startDate]
+                                    },
+                                    {
+                                        $lt: ['$$date', endDate]
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+        return res.status(200).json(result);
+
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ msg: 'Server Error!' });
+    }
+}
+
 export {
     signupController,
     verificationController,
@@ -312,5 +366,8 @@ export {
     twoFactorAuthController,
     fetchUserProfile,
     updateUserProfile,
-    verifyUpdateOTP
+    verifyUpdateOTP,
+    getScheduledTasksController,
+    getAlertsController,
+    filterAlertsController
 };

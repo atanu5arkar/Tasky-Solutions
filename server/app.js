@@ -1,7 +1,7 @@
 import express from "express";
 import path from "node:path";
 
-import "./utils/connectPostgres.js";
+import "./utils/connectMongo.js";
 import adminRouter from "./routers/adminRouter.js";
 import userRouter from "./routers/Individual/userRouter.js";
 import taskRouter from "./routers/Individual/taskRouter.js";

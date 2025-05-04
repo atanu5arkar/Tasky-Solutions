@@ -1,11 +1,11 @@
 import express from "express";
-import { pool } from "../../utils/connectPostgres.js";
 
 import userAuthorization from "../../middlewares/userAuth.js";
 import { createRzpOrder, verifyRzpPayment } from "../../controllers/rzpMiddlewares.js";
 import {
     loginValidator,
     signupValidator,
+    alertsFilterValidator,
     validationMiddleware,
     profileDataValidator,
     payAmountValidator
@@ -16,9 +16,13 @@ import {
     loginController,
     twoFactorAuthController,
     fetchUserProfile,
+    getScheduledTasksController,
+    getAlertsController,
+    filterAlertsController,
     updateUserProfile,
     verifyUpdateOTP
 } from "../../controllers/Individual/userControllers.js";
+import UserModel from "../../models/Individual/User.js";
 
 const userRouter = express.Router();
 
@@ -36,6 +40,16 @@ userRouter.get('/profile', userAuthorization, fetchUserProfile);
 userRouter.put('/update', userAuthorization, profileDataValidator(), validationMiddleware, updateUserProfile);
 userRouter.post("/update/verify", userAuthorization, verifyUpdateOTP);
 
+userRouter.get('/tasks', userAuthorization, getScheduledTasksController);
+userRouter.get('/alerts', userAuthorization, getAlertsController);
+
+userRouter.get('/filter-alerts',
+    userAuthorization,
+    alertsFilterValidator(),
+    validationMiddleware,
+    filterAlertsController
+);
+
 userRouter.post("/create-order", userAuthorization, payAmountValidator(), validationMiddleware, createRzpOrder);
 userRouter.post("/verify-payment", userAuthorization, verifyRzpPayment, async (req, res) => {
     try {
@@ -44,14 +58,12 @@ userRouter.post("/verify-payment", userAuthorization, verifyRzpPayment, async (r
 
         const newCredits = (amount / 100) * 10;
 
-        await pool.query(`
-            UPDATE users
-            SET 
-                sms_credits = sms_credits + $1, 
-                email_credits = email_credits + $1
-            WHERE _id = $2;    
-        `, [newCredits, userId]);
-
+        await UserModel.updateOne({ _id: userId }, {
+            $inc: {
+                "credits.email": newCredits,
+                "credits.sms": newCredits
+            }
+        });
         return res.status(200).json({ msg: "Payment Successful" });
 
     } catch (error) {

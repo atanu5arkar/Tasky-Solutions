@@ -180,7 +180,7 @@ function Profile() {
 
     const ref = useRef([]);
 
-    const { name, email, phone, email_credits, sms_credits } = userContext.profile;
+    const { name, email, phone, credits } = userContext.profile;
     const { newEmail, newPhone } = userContext.profileEditData;
 
     useEffect(() => {
@@ -319,10 +319,10 @@ function Profile() {
 
                     <div className="flex items-center gap-x-5 *:text-center">
                         <p className="py-3 px-6 bg-gray-100 rounded-md border-1 border-gray-300">
-                            <i className="fa-solid fa-at"></i> {email_credits}
+                            <i className="fa-solid fa-at"></i> {credits.email}
                         </p>
                         <p className="py-3 px-6 bg-gray-100 rounded-md border-1 border-gray-300">
-                            <i className="fa-solid fa-comment-sms fa-lg"></i> {sms_credits}
+                            <i className="fa-solid fa-comment-sms fa-lg"></i> {credits.sms}
                         </p>
                         <button
                             type="button"

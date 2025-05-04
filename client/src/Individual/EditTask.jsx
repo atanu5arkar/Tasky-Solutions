@@ -16,7 +16,7 @@ function EditTask() {
 
     useEffect(() => {
         if (editData && showEditModal) {
-            const { task, deadline, alert_type, status } = editData;
+            const { task, deadline, alertType, status } = editData;
             setData({
                 task,
                 alertType,
@@ -45,7 +45,7 @@ function EditTask() {
                     auth
                 },
                 body: JSON.stringify({ ...data })
-            });            
+            });
 
             var res = await fetch(req);
             var resBody = await res.json();
@@ -68,11 +68,8 @@ function EditTask() {
                 return setTimeout(() => navigate("/login"), 3000);
             }
 
-            if (res.status == 400) {
-                console.log(resBody);
-                
+            if (res.status == 400)
                 return setFormErrors({ ...resBody.validationErrors });
-            }
         }
     }
 

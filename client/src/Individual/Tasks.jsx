@@ -1,7 +1,8 @@
 import { formatInTimeZone } from "date-fns-tz";
-import { useContext, useEffect } from "react";
+import { useState, useContext, useEffect } from "react";
 
 import UserContext from "./contexts/userContext.jsx";
+import Loading from "../Loading.jsx";
 import Alert from "../Alert/Alert.jsx";
 import AlertContext from "../Alert/alertContext.jsx";
 import { useNavigate } from "react-router";
@@ -128,7 +129,7 @@ function Task({ data }) {
 
                 <p className="text-sm font-medium rounded-full px-4 py-1 bg-blue-100 flex items-center gap-x-2">
                     <i className="fa-regular fa-bell"></i>
-                    <span className=""> {data.alert_type.toUpperCase()} </span>
+                    <span className=""> {data.alertType.toUpperCase()} </span>
                 </p>
             </div>
         </div>
@@ -136,24 +137,31 @@ function Task({ data }) {
 }
 
 function TaskList() {
+    const [loading, setLoading] = useState(true);
     const userContext = useContext(UserContext);
 
-    // useEffect(() => {
-    //     async function getTaskData() {
-    //         try {
-    //             const auth = localStorage.getItem("auth");
-    //             if (!auth) return navigate("/login");
+    useEffect(() => {
+        async function getTaskData() {
+            try {
+                const auth = localStorage.getItem("auth");
+                if (!auth) return navigate("/login");
 
-    //             await userContext.fetchUserTasks(auth);
-    //             setLoading(false);
+                await userContext.fetchUserTasks(auth);
+                setLoading(false);
 
-    //         } catch (error) {
-    //             setLoading(false);
-    //             console.log(error);
-    //         }
-    //     }
-    //     getTaskData();
-    // }, []);
+            } catch (error) {
+                setLoading(false);
+                console.log(error);
+            }
+        }
+        getTaskData();
+    }, []);
+
+    if (loading) return (
+        <figure className="grow flex justify-center items-center">
+            <Loading />
+        </figure>
+    );
 
     return (
         <div className="overflow-auto flex flex-col grow gap-y-2 px-3 pt-4 lg:px-0">
